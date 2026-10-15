@@ -5,6 +5,11 @@ node_modules/
 grade5-portal-database.sqlite
 grade5-portal-database.sqlite-shm
 grade5-portal-database.sqlite-wal
+*.sqlite
+*.sqlite-*
+*.db
+*.db-*
 grade5-portal-database.xlsx
 SF1.xls
 *.profiles/
+npm-debug.log*

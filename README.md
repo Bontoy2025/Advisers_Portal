@@ -4,13 +4,22 @@
 
 The portal uses its Node.js backend and local SQLite database. Do not use VS Code Live Preview to run the application.
 
-1. Double-click `start-portal.bat`, or open a terminal in this folder and run `npm start`.
+1. Double-click `start-portal.bat`. On the first run it checks Node.js and installs dependencies from `package-lock.json` when needed. Alternatively, open a terminal in this folder, run `npm ci`, then run `npm start`.
 2. Keep the terminal window open while using the portal.
 3. Open the exact `http://127.0.0.1:...` address printed in the terminal. The default port is `3003`; if it is occupied, the server tries the following ports and prints the one it selected.
 
 If you already had the portal running when code was updated, stop that old Node server and start it again. A running Node process keeps its old API routes in memory even though it may serve an updated `index.html` from disk. The import button posts to `POST /api/students/import` on the same origin as the portal page; do not change the port manually or open the page using Live Preview.
 
-On a new computer, install Node.js 22.5 or newer, run `npm install` once in this folder, and then start the portal.
+On a new computer, install Node.js 22.5 or newer and start the portal with `start-portal.bat`, or run `npm ci` followed by `npm start` from this folder. The Node.js built-in `node:sqlite` module is used; no separate SQLite server or Express installation is needed.
+
+### If the browser cannot connect
+
+- Start the app with `start-portal.bat` or `npm start` from the folder containing `server.js`; keep that terminal open.
+- Open the exact `http://127.0.0.1:...` URL printed by the server. The default port is `3003`; if occupied, the server tries ports through `3023`. Do not assume the address is still `3003`.
+- Visit that same address followed by `/api/health`. A healthy backend returns `{"status":"ok","storage":"sqlite"}`. If the browser shows the frontend but its API requests fail, check that the address is from this Node server, not a directly opened `index.html`, VS Code Live Preview, GitHub repository page, or GitHub Pages.
+- On first start, the server creates the SQLite database and migrates `grade5-portal-database.xlsx` if present, otherwise `grade5-portal-database-template.xlsx`. A new clone therefore starts with an empty database. Existing account, learner, grade, and attendance data is not included in the GitHub repository.
+- If `/api/health` returns an error, check the server terminal for the database path and migration error. Confirm the template workbook is present and readable, and that the folder is writable. Set `PORTAL_DATABASE_PATH` to a writable database path or `PORTAL_MIGRATION_WORKBOOK` to a readable workbook if using custom locations.
+- The portal binds to `127.0.0.1` by default for local use. For a hosting service that assigns a port, set its `PORT` environment variable and bind publicly with `HOST=0.0.0.0`; configure persistent storage for the SQLite file. GitHub Pages cannot run this Node.js backend.
 
 ## SQLite backend
 
