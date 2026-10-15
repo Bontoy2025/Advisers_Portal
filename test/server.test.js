@@ -1,6 +1,7 @@
 "use strict";
 
 const assert = require("node:assert/strict");
+const crypto = require("node:crypto");
 const fs = require("node:fs/promises");
 const os = require("node:os");
 const path = require("node:path");
@@ -9,8 +10,29 @@ const ExcelJS = require("exceljs");
 const XLSX = require("@e965/xlsx");
 const { createServer, readPortalDatabaseWorkbook, writePortalDatabaseWorkbook } = require("../server");
 
-const sourceWorkbook = path.join(__dirname, "..", "grade5-portal-database.xlsx");
+const sourceWorkbook = path.join(__dirname, "..", "grade5-portal-database-template.xlsx");
 const sourceSF2Template = path.join(__dirname, "..", "SF2.xlsx");
+const testWorkbookHeaders = {
+  Users: [
+    "User ID", "Role", "Full Name", "Email", "Password hash (PBKDF2)", "Class ID", "Status",
+    "Created", "Sign-ins", "Last sign-in", "Email check",
+  ],
+  Classes: [
+    "Class ID", "Classroom number", "Class code (parents enter this)", "Teacher User ID",
+    "Teacher name", "Students", "Parents signed up", "Grade", "Section", "School Year",
+    "Name of School", "School ID", "School Head",
+  ],
+  Students: [
+    "Student ID", "Student name", "Class ID", "Parent User ID", "Parent name", "Parent email",
+    "LRN", "Last name", "First name", "Middle name", "Gender", "Birthdate",
+    "Mother's Maiden name", "Guardian relationship", "Father", "Current residence", "Religion",
+    "Mother tongue", "Dialects", "Ethnicities", "Teacher User ID",
+  ],
+  "Term Grades": [
+    "Grade ID", "Student ID", "Class ID", "Teacher User ID", "Term", "Subject", "Grade", "Updated",
+  ],
+  SignInLog: ["Timestamp", "Email", "Role chosen", "Result", "User ID", "Note"],
+};
 const sf2StudentRows = [
   ...Array.from({ length: 50 }, (_, index) => 13 + index),
   ...Array.from({ length: 50 }, (_, index) => 64 + index),
@@ -25,6 +47,16 @@ function attendanceWeekdays(month) {
     const weekday = new Date(`${date}T00:00:00.000Z`).getUTCDay();
     return weekday !== 0 && weekday !== 6 ? date : null;
   }).filter(Boolean);
+}
+
+function applyTestWorkbookHeaders(workbook) {
+  for (const [sheetName, headers] of Object.entries(testWorkbookHeaders)) {
+    const sheet = workbook.getWorksheet(sheetName);
+    assert.ok(sheet, `${sheetName} worksheet exists`);
+    headers.forEach((header, index) => {
+      sheet.getRow(1).getCell(index + 1).value = header;
+    });
+  }
 }
 
 async function createSF2Upload(month, learners) {
@@ -74,6 +106,7 @@ async function createEmptyTestWorkbook(databasePath) {
   await fs.copyFile(sourceWorkbook, databasePath);
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.readFile(databasePath);
+  applyTestWorkbookHeaders(workbook);
   const clearColumns = (sheetName, columns) => {
     const sheet = workbook.getWorksheet(sheetName);
     assert.ok(sheet, `${sheetName} worksheet exists`);
@@ -103,6 +136,37 @@ async function createEmptyTestWorkbook(databasePath) {
   if (termGrades) clearColumns("Term Grades", Array.from({ length: 8 }, (_, index) => index + 1));
   clearColumns("SignInLog", [1, 2, 3, 4, 6]);
 
+  await workbook.xlsx.writeFile(databasePath);
+}
+
+async function createMigrationTestWorkbook(databasePath) {
+  await fs.copyFile(sourceWorkbook, databasePath);
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.readFile(databasePath);
+  applyTestWorkbookHeaders(workbook);
+  const users = workbook.getWorksheet("Users");
+  const userColumns = new Map();
+  users.getRow(1).eachCell((cell, column) => {
+    userColumns.set(String(cell.value).toLowerCase(), column);
+  });
+  const fakeSalt = Buffer.from("test-only-salt");
+  const fakeHash = crypto.pbkdf2Sync(
+    "migration-fixture-password",
+    fakeSalt,
+    210000,
+    32,
+    "sha256",
+  ).toString("hex");
+  const account = users.addRow([]);
+  account.getCell(userColumns.get("user id")).value = "USER-MIGRATION-FIXTURE";
+  account.getCell(userColumns.get("role")).value = "teacher";
+  account.getCell(userColumns.get("full name")).value = "Migration Fixture Teacher";
+  account.getCell(userColumns.get("email")).value = "migration-fixture@example.invalid";
+  account.getCell(userColumns.get("password hash (pbkdf2)")).value =
+    `pbkdf2$210000$${fakeSalt.toString("hex")}$${fakeHash}`;
+  account.getCell(userColumns.get("class id")).value = "CLASS-MIGRATION-FIXTURE";
+  account.getCell(userColumns.get("status")).value = "active";
+  account.getCell(userColumns.get("created")).value = "2026-01-01T00:00:00.000Z";
   await workbook.xlsx.writeFile(databasePath);
 }
 
@@ -2452,7 +2516,7 @@ test("SQLite migration preserves existing portal accounts", async (context) => {
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), "grade5-portal-migration-"));
   const migrationWorkbookPath = path.join(directory, "existing.xlsx");
   const databasePath = path.join(directory, "portal.sqlite");
-  await fs.copyFile(sourceWorkbook, migrationWorkbookPath);
+  await createMigrationTestWorkbook(migrationWorkbookPath);
   const server = createServer({ databasePath, migrationWorkbookPath });
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
   context.after(async () => {
