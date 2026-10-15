@@ -1,0 +1,10 @@
+node_modules/
+.env
+.env.*
+!.env.example
+grade5-portal-database.sqlite
+grade5-portal-database.sqlite-shm
+grade5-portal-database.sqlite-wal
+grade5-portal-database.xlsx
+SF1.xls
+*.profiles/
